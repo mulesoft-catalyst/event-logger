@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:kafka="http://www.mulesoft.org/schema/mule/kafka"
+    xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+	http://www.mulesoft.org/schema/mule/kafka http://www.mulesoft.org/schema/mule/kafka/current/mule-kafka.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<kafka:producer-config name="Apache_Kafka_Producer_configuration" doc:name="Apache Kafka Producer configuration" doc:id="a41a0725-48ba-44c8-b271-58d5eaa2a224" >
+		<kafka:producer-plaintext-connection >
+			<reconnection >
+				<reconnect-forever />
+			</reconnection>
+			<kafka:bootstrap-servers >
+				<kafka:bootstrap-server value="${kafka.bootstrap-servers}" />
+			</kafka:bootstrap-servers>
+		</kafka:producer-plaintext-connection>
+	</kafka:producer-config>
+	<kafka:consumer-config name="Apache_Kafka_Consumer_configuration" doc:name="Apache Kafka Consumer configuration" doc:id="e0ba46f1-f227-4b60-97ec-0c7539d13771" >
+		<kafka:consumer-plaintext-connection autoOffsetReset="EARLIEST" groupId="${kafka.consumerGroupId}">
+			<reconnection >
+				<reconnect-forever />
+			</reconnection>
+			<kafka:bootstrap-servers >
+				<kafka:bootstrap-server value="${kafka.bootstrap-servers}" />
+			</kafka:bootstrap-servers>
+			<kafka:topic-patterns >
+				<kafka:topic-pattern value="${kafka.topic}" />
+			</kafka:topic-patterns>
+		</kafka:consumer-plaintext-connection>
+	</kafka:consumer-config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="ca0bbf64-c3a3-49ca-863c-5a95dd765cb1" >
+		<db:generic-connection url="${db.jdbcUrl}" driverClassName="org.postgresql.Driver" user="${db.username}" password="${db.password}" />
+	</db:config>
+	<flow name="pgsql-event-logger-publish-flow" doc:id="99ba9014-2340-48ff-8dc6-7617beb72fed" >
+		<kafka:publish doc:name="Publish" doc:id="dc9b1877-730e-48b9-b454-10b0ae83c931" config-ref="Apache_Kafka_Producer_configuration" topic="${kafka.topic}"/>
+	</flow>
+	<flow name="pgsql-event-logger-subscribe-flow" doc:id="4ce7f62f-77a2-4e7e-a489-30d5004ffeb6" >
+		<kafka:message-listener doc:name="Message listener" doc:id="727192c3-f272-4e11-a943-548871d840ef" config-ref="Apache_Kafka_Consumer_configuration"/>
+		<set-payload value='#[read(payload, "application/json")]' doc:name="Set Payload" doc:id="0d4e88cf-7a41-413e-961b-772b169ebcf4" />
+		<try doc:name="Try" doc:id="bc4614d7-690f-4112-940c-9a5e913e353f" transactionalAction="BEGIN_OR_JOIN">
+			<db:insert doc:name="Insert" doc:id="ef2cf2f3-7826-4d7b-8839-6c26e3e13545" target="eventInsertResult" config-ref="Database_Config" autoGenerateKeys="true">
+			<db:sql><![CDATA[INSERT INTO event (timestamp, domain, application, environment, severity, message, details, correlation_id, event_type, business_key) 
+VALUES (:timestamp, :domain, :application, :environment, :severity, :message, :details, :correlationId, :eventType, :businessKey)]]></db:sql>
+			<db:input-parameters><![CDATA[#[payload 
+++ {"timestamp": payload.timestamp as DateTime {class: "java.sql.Timestamp"}}
+++ {"correlationId": payload.correlationId default null}
+++ {"event_type": payload.eventType default null}
+++ {"businessKey": payload.businessKey default null}
+++ {"details": payload.details default null}]]]></db:input-parameters>
+		</db:insert>
+			<choice doc:name="Choice" doc:id="fd8aa643-8ae0-43f7-b87e-9b015e71eef9">
+			<when expression="#[!isEmpty(payload.eventData)]">
+				<db:bulk-insert doc:name="Bulk insert" doc:id="24dfb876-470e-483e-86c5-a7fb2a760567" config-ref="Database_Config">
+					<db:bulk-input-parameters><![CDATA[#[%dw 2.0
+
+import * from dw::core::Strings
+
+fun normalizeDateTime(dateTimeStr, tzWithColonSeparator) = 
+    if (dateTimeStr matches /^\d{4}(\-\d{2}){2}$/)
+      (dateTimeStr ++ "T00:00:00") ++ (if (tzWithColonSeparator) '+00:00' else '+0000')
+    else if (dateTimeStr matches /(.*)([+\-]\d{2,4})$/)
+      if (tzWithColonSeparator)
+	        ((dateTimeStr match /(.*)([+\-]\d{2,4})$/)[1] 
+	        ++ (((dateTimeStr match /(.*)([+\-]\d{2,4})$/)[2]))[0 to 2]
+	        ++ ":"
+	        ++ rightPad((dateTimeStr match /(.*)([+\-]\d{2,4})$/)[2], 5, '0')[3 to 4])
+	  else dateTimeStr
+    else if (dateTimeStr matches /(.*)([+\-]\d{2}:\d{2})$/)
+      if (tzWithColonSeparator)
+        dateTimeStr
+	  else 
+	    ((dateTimeStr match /(.*)(([+\-]\d{2}):(\d{2}))$/)[1]
+        ++ (((dateTimeStr match /(.*)(([+\-]\d{2}):(\d{2}))$/)[2]) replace ":" with ""))
+    else if (dateTimeStr matches /^\d{4}(\-\d{2}){2}T\d{2}:\d{2}Z{0,1}$/)
+        (dateTimeStr replace 'Z' with '') ++ ":00.000" ++ (if (tzWithColonSeparator) '+00:00' else '+0000')
+    else if (dateTimeStr matches /^\d{4}(\-\d{2}){2}T\d{2}(:\d{2}){2}Z{0,1}$/)
+        (dateTimeStr replace 'Z' with '') ++ ".000" ++ (if (tzWithColonSeparator) '+00:00' else '+0000')        
+    else if (dateTimeStr matches /^\d{4}(\-\d{2}){2}T\d{2}(:\d{2}){2}\.\d+Z{0,1}$/)
+        (dateTimeStr replace 'Z' with '') ++ (if (tzWithColonSeparator) '+00:00' else '+0000')                
+    else null
+    
+fun toDateTime(dateStr) = 
+	if (normalizeDateTime(dateStr, false) != null)
+	  if (Validation::isTime(normalizeDateTime(dateStr, false), "yyyy-MM-dd'T'HH:mm:ss.SSSZ")) 
+		normalizeDateTime(dateStr, true) as DateTime {class: "java.sql.Timestamp"}
+	  else null
+	else null  
+ 
+output application/java 
+---
+payload.eventData map (item, index) -> {
+	eventId: vars.eventInsertResult.generatedKeys.id,
+	name: item.name,
+	dtValue: toDateTime(item.value),
+	strValue: if (typeOf(item.value) ~= "String") item.value else null,
+	boolValue: if (typeOf(item.value) ~= "Boolean") item.value else null,
+	numValue: if (Validation::isNumber(item.value, "DOUBLE") or Validation::isNumber(item.value, "FLOAT")) item.value else null,
+}]]]></db:bulk-input-parameters>
+					<db:sql><![CDATA[INSERT INTO event_data (event_id, name, dt_value, str_value, bool_value, num_value) 
+VALUES (:eventId, :name, :dtValue, :strValue, :boolValue, :numValue)]]></db:sql>
+				</db:bulk-insert>
+			</when>
+		</choice>
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="d0417303-edca-4238-aadb-c536f2812994" >
+					<logger level="INFO" doc:name="Logger" doc:id="cf225e0b-7803-4727-8c3c-df2bff613b87" message='Could not write event. Payload: #[write(payload, "application/json", {"indent": false})]'/>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+	</flow>
+</mule>

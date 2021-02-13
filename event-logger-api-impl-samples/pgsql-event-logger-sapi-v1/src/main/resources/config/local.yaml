@@ -1,0 +1,12 @@
+http:
+  port: "8082"
+  
+db:
+  jdbcUrl: "jdbc:postgresql://localhost:5432/eventdb"
+  username: "mulesoft"
+  password: "mulesoft"
+
+kafka:
+  bootstrap-servers: "localhost:9092"
+  topic: "PGSQL_EVENT_LOGGER_TOPIC"
+  consumerGroupId: "pgsql-event-logger-sapi-v1"

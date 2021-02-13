@@ -1,0 +1,7 @@
+app:
+  domain: test
+  
+eventLoggerApi:
+  host: "localhost"
+  port: "8081"
+  basePath: "/"

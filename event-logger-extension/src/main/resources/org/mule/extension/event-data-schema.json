@@ -1,0 +1,16 @@
+{
+  "type": "array",
+  "items": {"$ref": "#/definitions/EventDataEntry"},
+  "definitions": {
+    "EventDataEntry": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+  		  "value": {
+  		    "type": ["string", "boolean", "number", "integer"]
+  		  }
+  		},
+  		"required": ["name", "value"]
+    }
+  }
+}

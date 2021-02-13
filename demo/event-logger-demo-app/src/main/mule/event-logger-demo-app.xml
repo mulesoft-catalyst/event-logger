@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:module-eventloggerextension="http://www.mulesoft.org/schema/mule/module-eventloggerextension" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/module-eventloggerextension http://www.mulesoft.org/schema/mule/module-eventloggerextension/current/mule-module-eventloggerextension.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="ebdc1e78-7e18-482b-a8ab-5a83a19f9df3" >
+		<http:listener-connection host="0.0.0.0" port="8082" />
+	</http:listener-config>
+	<module-eventloggerextension:config name="EventLoggerExtension_Config" doc:name="EventLoggerExtension Config" doc:id="559894c3-b1a5-439f-9eb4-6c326b5361ca" domain="${app.domain}" httpRequestConfigReference="EventLoggerApi_HTTP_Request_configuration"/>
+	<http:request-config name="EventLoggerApi_HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="92bc5917-85a2-4b72-a164-889d80728f04" basePath="${eventLoggerApi.basePath}">
+		<http:request-connection host="${eventLoggerApi.host}" port="${eventLoggerApi.port}" />
+	</http:request-config>
+	<global-property doc:name="Global Property" doc:id="53503d2a-868b-4e8d-8957-473f4980b378" name="mule.env" value="local" />
+	<configuration-properties doc:name="Configuration properties" doc:id="4ccc46d0-99b5-4405-a1c7-f5ce45ce325e" file="config/${mule.env}.yaml" />
+	<flow name="event-logger-demo-appFlow" doc:id="2414df2f-c231-4b04-99a8-22fc3944e1a2" >
+		<http:listener doc:name="Listener" doc:id="6ce40ca0-6e34-41ad-8e75-78f5f59d7ade" config-ref="HTTP_Listener_config" path="/test"/>
+		<module-eventloggerextension:logger doc:name="Logger" doc:id="349b4af5-9c9f-4cf8-8711-0f3848c33c2a" config-ref="EventLoggerExtension_Config" message="This is a test" details='#[write(payload, "application/json", {"indent": false})]' businessKey="123" eventType="TEST">
+			<module-eventloggerextension:event-data ><![CDATA[#[[
+	{name: "strVal", value: "strValue"},
+	{name: "dtVal", value: "2021-01-01T12:00:00.000Z"},
+	{name: "intVal", value: 12345},
+	{name: "dblVal", value: 12345.34},
+	{name: "boolVal", value: true}
+]]]]></module-eventloggerextension:event-data>
+		</module-eventloggerextension:logger>
+	</flow>
+</mule>

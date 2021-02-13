@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalogs xmlns="http://www.mulesoft.org/schema/mule/types" >
+    <catalog name="LogLevel" format="application/json">
+        <schema format="application/json+schema" location="./log-level-schema.json" />
+    </catalog>
+    <catalog name="EventData" format="application/json">
+        <schema format="application/json+schema" location="./event-data-schema.json" />
+    </catalog>
+    <catalog name="HttpHeaders" format="application/json">
+        <schema format="application/json+schema" location="./http-headers-schema.json" />
+    </catalog>            
+</catalogs>

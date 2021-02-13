@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module name="EventLoggerExtension"
+        prefix="module-eventloggerextension"
+        doc:description="Event Logger Extension"
+
+        xmlns="http://www.mulesoft.org/schema/mule/module"
+        xmlns:mule="http://www.mulesoft.org/schema/mule/core"
+        xmlns:http="http://www.mulesoft.org/schema/mule/http"
+        xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+        xmlns:tns="http://www.mulesoft.org/schema/mule/module-eventloggerextension"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+           http://www.mulesoft.org/schema/mule/module http://www.mulesoft.org/schema/mule/module/current/mule-module.xsd
+           http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+           http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+           http://www.mulesoft.org/schema/mule/module-eventloggerextension http://www.mulesoft.org/schema/mule/module-eventloggerextension/current/mule-module-eventloggerextension.xsd">
+           
+    <property name="httpRequestConfigReference" type="string" defaultValue="#[Mule::p('eventLogger.httpRequestConfig.name')]" tab="Event Logger System API" />
+    <property name="httpHeaders" type="HttpHeaders" use="OPTIONAL" tab="Event Logger System API" />
+    <property name="domain" displayName="Domain Name" type="string" defaultValue="#[Mule::p('app.domain')]" summary="Domain where the application belongs to" doc:description="Domain where the application belongs to"/>
+    <property name="app" displayName="Application Name" type="string" defaultValue="#[Mule::p('app.name')]" summary="Name of the application that will generate the events to be logged" doc:description="Name of the application that will generate the events to be logged"/>
+    <property name="env" displayName="Environment" type="string" defaultValue="#[Mule::p('mule.env')]" summary="Environment where the application is running. Defaults to 'mule.env' property." doc:description="Environment where the application is running. Defaults to 'mule.env' property."/>
+    
+    <operation name="logger" doc:description="Event Logger">
+    	<parameters>
+    		<parameter name="timestamp" type="datetime" defaultValue="#[now()]"/>
+    		<parameter name="severity" type="LogLevel" defaultValue="INFO"/>
+    		<parameter name="message" type="string" />
+    		<parameter name="details" type="string" use="OPTIONAL"/>
+    		<parameter name="correlationId" type="string" defaultValue="#[correlationId]"/>
+    		<parameter name="eventType" type="string" use="OPTIONAL"/>
+    		<parameter name="businessKey" type="string" use="OPTIONAL" />
+    		<parameter name="eventData" type="EventData" use="OPTIONAL" role="CONTENT"/>
+    	</parameters>
+        <body>
+			<mule:set-variable variableName="logEntry" value='#[
+%dw 2.0
+output application/json skipNullOn="everywhere", indent=false
+---
+{
+	domain: vars.domain,
+	application: vars.app,
+	environment: vars.env,
+    timestamp: vars.timestamp, 	
+	severity: vars.severity,
+	message: vars.message,
+	details: vars.details,
+	correlationId: vars.correlationId,
+	eventType: vars.eventType,
+	businessKey: vars.businessKey,
+	eventData: vars.eventData
+}]' doc:name="Set Variable" doc:id="0c1d3cfe-c3a9-48cf-81c0-24a7b7580da6" />        
+			<mule:async doc:name="Async" doc:id="82f5243c-f048-4477-be55-4061be744ff7">
+				<mule:flow-ref doc:name="Trigger Event Logger Request" doc:id="670ade93-7b71-4caf-9d59-a66c0fb7eeed" name="event-logger-request-flow"/>
+            </mule:async>        	
+        </body>
+    </operation>
+    
+    <!-- Use a flow as a workaround, according to https://www.mulesoft.org/jira/browse/SE-18335 -->    
+    <mule:flow name="event-logger-request-flow" doc:id="6dca8b92-96d6-4ad7-b308-b9752100ae28">
+		<mule:try doc:name="Try" doc:id="ca0b80cc-88d0-4154-8120-e1d209321f8b" >
+			<mule:until-successful maxRetries="3" doc:name="Until Successful" doc:id="a8f59564-46bd-48ee-a9b5-03806f87808f" millisBetweenRetries="1000">
+				<mule:try doc:name="Try" doc:id="ca0b80cc-88d0-4154-8120-e1d209321f8c" >
+					<http:request method="POST" doc:name="Request" doc:id="2a7da4a1-ebc0-47be-95e7-9b879b8007ef" config-ref="#[vars.httpRequestConfigReference]" path="/api/events">
+						<http:body ><![CDATA[#[vars.logEntry]]]></http:body>
+							<http:headers ><![CDATA[#[output application/java
+---
+if (vars.httpHeaders == null) {} else vars.httpHeaders]]]>
+							</http:headers>						
+					</http:request>
+					<mule:error-handler >
+						<mule:on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="08d4432d-eee0-40f1-bdcb-480f2cb4b623" >
+							<mule:logger level="ERROR" doc:name="Logger" doc:id="138f9879-3f89-4380-983f-b4b31a89ea4d" message="Error calling event logger sapi.\nMule message: #[message]\nVariables: #[vars]" />
+						</mule:on-error-propagate>
+					</mule:error-handler>							
+				</mule:try>			 
+			</mule:until-successful>
+			<mule:error-handler >
+				<mule:on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="08d4432d-eee0-40f1-bdcb-480f2cb4b622" >
+					<mule:logger level="ERROR" doc:name="Logger" doc:id="138f9879-3f89-4380-983f-b4b31a89ea4c" message="Error calling Event Logger System API: #[error.description]" />
+				</mule:on-error-continue>
+			</mule:error-handler>
+		</mule:try>			 
+		<mule:choice doc:name="Choice" doc:id="9b0c9b38-c09b-4beb-b078-110d07740ac3">
+			<mule:when expression='#[vars.severity == "INFO"]'>
+	    		<mule:logger level="INFO" doc:name="Logger" doc:id="aaa0da52-3fc5-4be5-8ced-70773e6c6c96" message="#[vars.logEntry]"/>
+	    	</mule:when>
+			<mule:when expression='#[vars.severity == "WARN"]'>
+	    		<mule:logger level="WARN" doc:name="Logger" doc:id="c8755864-e9b5-448e-bc96-95be7f71f747" message="#[vars.logEntry]"/>
+	    	</mule:when>
+	    	<mule:when expression='#[vars.severity == "DEBUG"]'>
+		    	<mule:logger level="DEBUG" doc:name="Logger" doc:id="430964c5-9d76-4f38-94e9-8bf43a5f19da" message="#[vars.logEntry]"/>
+	    	</mule:when>
+	    	<mule:when expression='#[vars.severity == "ERROR"]'>
+		    	<mule:logger level="ERROR" doc:name="Logger" doc:id="1abb6878-5795-49f0-a460-574f1ebbebd8" message="#[vars.logEntry]"/>
+	    	</mule:when>
+	    	<mule:when expression='#[vars.severity == "TRACE"]'>
+		    	<mule:logger level="TRACE" doc:name="Logger" doc:id="e3199399-762f-4318-9a3c-bbab655ebfa4" message="#[vars.logEntry]"/>
+	    	</mule:when>
+	    	<mule:otherwise>
+	    		<mule:logger level="ERROR" doc:name="Logger" doc:id="7c176668-0227-4aee-b7cf-489bd1052ab2" message="Unsupported log level: #[vars.severity]. Log entry: #[vars.logEntry]"/>
+	    	</mule:otherwise>
+		</mule:choice>    
+    </mule:flow>
+    
+ </module>	
